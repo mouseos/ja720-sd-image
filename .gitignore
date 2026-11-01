@@ -1,0 +1,6 @@
+cache/
+build/
+kernel/
+work/
+dist/
+initramfs.cpio.gz
