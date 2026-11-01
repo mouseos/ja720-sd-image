@@ -1,0 +1,66 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      kernel_tag:
+        description: "linux-ja720 release tag (empty = latest)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabi device-tree-compiler zip curl \
+            bzip2 xz-utils cpio
+
+      - name: Restore downloads and rootfs build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            build
+            initramfs.cpio.gz
+          key: rootfs-${{ hashFiles('VERSIONS', 'initramfs/build-rootfs.sh', 'initramfs/rootfs-overlay/**') }}
+          restore-keys: |
+            rootfs-
+
+      - name: Build initramfs rootfs (busybox + dropbear, static armv5te)
+        run: ./initramfs/build-rootfs.sh
+
+      - name: Assemble SD update image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KERNEL_TAG: ${{ inputs.kernel_tag }}
+        run: |
+          if [ -z "$KERNEL_TAG" ]; then unset KERNEL_TAG; fi
+          ./build-image.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ja720-sd-image
+          path: dist/
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip=$(ls dist/ja720-linux-*.zip)
+          tag="img-${{ github.run_number }}"
+          gh release create "$tag" "$zip" dist/JA720LNX.BIN dist/SDUPDATE.INI \
+            dist/README.txt dist/SHA256SUMS \
+            --title "JA720 Linux SD image ${{ github.run_number }}" \
+            --notes "Flashable SD update image for the JA720 Linux port. Copy JA720LNX.BIN and SDUPDATE.INI to a FAT microSD card and boot the device into SD update mode (see README.txt inside the zip)."
