@@ -104,10 +104,8 @@ PY
 cp work/payload.bin dist/JA720LNX.BIN
 printf 'JA720LNX.BIN 0\nNONE 0\nNONE 0\nNONE 0\n' > dist/SDUPDATE.INI
 cp docs/USAGE.txt dist/README.txt
-cp docs/RAW-IMAGE.txt dist/RAW-IMAGE.txt
-cp tools/make-raw-image.py dist/make-raw-image.py
 ZIP="ja720-linux-${KERNEL_TAG}.zip"
-( cd dist && rm -f "$ZIP" && zip -q "$ZIP" JA720LNX.BIN SDUPDATE.INI README.txt RAW-IMAGE.txt make-raw-image.py )
+( cd dist && rm -f "$ZIP" && zip -q "$ZIP" JA720LNX.BIN SDUPDATE.INI README.txt )
 ( cd dist && sha256sum JA720LNX.BIN "$ZIP" > SHA256SUMS )
 ls -l dist/
 echo "initrd: start=$(printf '0x%08x' $INITRD_START) end=$(printf '0x%08x' $INITRD_END) size=$INITRD_SIZE"
