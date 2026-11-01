@@ -60,14 +60,3 @@ jobs:
         with:
           name: ja720-sd-image
           path: dist/
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          zip=$(ls dist/ja720-linux-*.zip)
-          tag="img-${{ github.run_number }}"
-          gh release create "$tag" "$zip" dist/JA720LNX.BIN dist/SDUPDATE.INI \
-            dist/README.txt dist/SHA256SUMS \
-            --title "JA720 Linux SD image ${{ github.run_number }}" \
-            --notes "Flashable SD update image for the JA720 Linux port. Copy JA720LNX.BIN and SDUPDATE.INI to a FAT microSD card and boot the device into SD update mode (see README.txt inside the zip)."
