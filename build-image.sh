@@ -75,9 +75,10 @@ fdtput -tx work/ja720.dtb /chosen linux,initrd-end "$(printf '0x%08x' $INITRD_EN
 # ---- payload ----
 TOTAL=$((INITRD_OFF + INITRD_SIZE))
 TOTAL=$(( (TOTAL + 511) / 512 * 512 ))
-python3 - "$TOTAL" << 'PY'
+python3 - "$TOTAL" "$ZIMG_SIZE" "$INITRD_OFF" << 'PY'
 import struct, sys
-total = int(sys.argv[1])
+total, zimg_size, initrd_off = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+img = bytearray(total)
 hdr = bytearray(32)
 struct.pack_into('<I', hdr, 0x00, 0x80000020)   # entry point
 struct.pack_into('<I', hdr, 0x08, total)        # load size
@@ -85,15 +86,21 @@ struct.pack_into('<I', hdr, 0x0C, 0x80000000)   # load base
 struct.pack_into('<I', hdr, 0x10, total)        # size (duplicated, as stock)
 hdr[0x14:0x18] = b'W55\0'
 hdr[0x18:0x1C] = b'FA93'
-open('work/header.bin', 'wb').write(hdr)
+img[0:32] = hdr
+def place(path, off):
+    data = open(path, 'rb').read()
+    img[off:off + len(data)] = data
+place('work/shim.bin', 0x20)
+place('kernel/zImage', 0x100)
+place('work/ja720.dtb', 0x100 + zimg_size)
+place('initramfs.cpio.gz', initrd_off)
+open('work/payload.bin', 'wb').write(img)
+print('payload assembled:', total, 'bytes')
 PY
-dd if=/dev/zero of=work/payload.bin bs=1 count=$TOTAL 2>/dev/null
-dd if=work/header.bin of=work/payload.bin conv=notrunc 2>/dev/null
-dd if=work/shim.bin of=work/payload.bin seek=32 conv=notrunc 2>/dev/null
-dd if=kernel/zImage of=work/payload.bin seek=256 conv=notrunc 2>/dev/null
-dd if=work/ja720.dtb of=work/payload.bin seek=$((256 + ZIMG_SIZE)) conv=notrunc 2>/dev/null
-dd if=initramfs.cpio.gz of=work/payload.bin seek=$INITRD_OFF conv=notrunc 2>/dev/null
 
+# Sanity: the payload must fit the 32 MiB SDRAM window with room to spare.
+[ "$TOTAL" -lt 33554432 ] || { echo "payload too large: $TOTAL"; exit 1; }
+[ "$(stat -c%s work/payload.bin)" = "$TOTAL" ] || { echo "payload size mismatch"; exit 1; }
 cp work/payload.bin dist/JA720LNX.BIN
 printf 'JA720LNX.BIN 0\nNONE 0\nNONE 0\nNONE 0\n' > dist/SDUPDATE.INI
 cp docs/USAGE.txt dist/README.txt
