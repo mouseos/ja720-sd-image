@@ -17,7 +17,10 @@ ROOT=$PWD
 
 CACHE=$ROOT/cache
 BUILD=$ROOT/build
-STAMP=$(cat VERSIONS initramfs/build-rootfs.sh | md5sum | cut -d' ' -f1)
+# The stamp covers the overlay too: an overlay-only edit must rebuild.
+STAMP=$( { cat VERSIONS initramfs/build-rootfs.sh; \
+	find initramfs/rootfs-overlay -type f | sort | xargs cat; } \
+	| md5sum | cut -d' ' -f1)
 
 if [ -f "$BUILD/.stamp" ] && [ "$(cat "$BUILD/.stamp")" = "$STAMP" ] && \
    [ -f "$ROOT/initramfs.cpio.gz" ]; then

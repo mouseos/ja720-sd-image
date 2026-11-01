@@ -40,6 +40,13 @@ jobs:
       - name: Build initramfs rootfs (busybox + dropbear, static armv5te)
         run: ./initramfs/build-rootfs.sh
 
+      - name: Verify initramfs matches overlay
+        run: |
+          mkdir -p /tmp/vfy && cd /tmp/vfy
+          zcat "$GITHUB_WORKSPACE/initramfs.cpio.gz" | cpio -id --quiet init
+          diff init "$GITHUB_WORKSPACE/initramfs/rootfs-overlay/init"
+          echo "initramfs /init matches overlay"
+
       - name: Assemble SD update image
         env:
           GH_TOKEN: ${{ github.token }}
