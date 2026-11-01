@@ -1,0 +1,72 @@
+#!/bin/sh
+/bin/busybox --install -s /bin
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t devpts devpts /dev/pts
+hostname ja720
+
+# --- diagnostic log dump to the SD card ---------------------------------
+# This device has no USB port, so the SD card is the debug channel:
+# after a boot attempt, put the card back into a PC and read JA720LOG.TXT.
+dump_log() {
+	for dev in /dev/mmcblk0p1 /dev/mmcblk1p1 /dev/mmcblk0 /dev/mmcblk1; do
+		[ -b "$dev" ] || continue
+		mkdir -p /mnt/sd
+		if mount -t vfat -o rw "$dev" /mnt/sd 2>/dev/null; then
+			{
+				echo "=== ja720 boot log ==="
+				echo "device: $dev"
+				uname -a
+				echo "--- cmdline ---"
+				cat /proc/cmdline
+				echo "--- /dev ---"
+				ls /dev
+				echo "--- dmesg ---"
+				dmesg
+			} > /mnt/sd/JA720LOG.TXT 2>/dev/null
+			sync
+			umount /mnt/sd
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Wait briefly for the SD controller to enumerate, then dump.
+i=0
+while [ $i -lt 20 ]; do
+	ls /dev/mmcblk* >/dev/null 2>&1 && break
+	sleep 0.5
+	i=$((i + 1))
+done
+dump_log
+# Keep refreshing the log so late failures are captured too.
+( while true; do sleep 30; dump_log; done ) &
+
+# --- USB gadget ethernet + SSH (only useful on units with a USB port) ---
+modprobe g_ether 2>/dev/null
+i=0
+while [ $i -lt 6 ]; do
+	[ -d /sys/class/net/usb0 ] && break
+	sleep 0.5
+	i=$((i + 1))
+done
+if [ -d /sys/class/net/usb0 ]; then
+	ip addr add 192.168.7.2/24 dev usb0
+	ip link set usb0 up
+	mkdir -p /etc/dropbear
+	for k in rsa ecdsa ed25519; do
+		[ -f /etc/dropbear/dropbear_${k}_host_key ] || \
+			dropbearkey -t $k -f /etc/dropbear/dropbear_${k}_host_key >/dev/null 2>&1
+	done
+	dropbear -B -p 22
+	echo "dropbear: ssh root@192.168.7.2"
+fi
+
+echo
+echo "ja720 linux: login as root (password: ja720)"
+echo "boot log is written to JA720LOG.TXT on the SD card."
+echo
+exec setsid cttyhack sh
