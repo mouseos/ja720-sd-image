@@ -26,19 +26,23 @@ if [ -f "$BUILD/.stamp" ] && [ "$(cat "$BUILD/.stamp")" = "$STAMP" ] && \
 fi
 
 mkdir -p "$CACHE" "$BUILD"
+dl() { [ -f "$2" ] || curl -fL --retry 3 --connect-timeout 30 -o "$2" "$1"; }
 CROSS_TAR=$CACHE/$(basename "$MUSL_TOOLCHAIN_URL")
-[ -f "$CROSS_TAR" ] || curl -fL -o "$CROSS_TAR" "$MUSL_TOOLCHAIN_URL"
-if [ ! -d "$CACHE/armv5l-linux-musleabi-cross" ]; then
-	tar -xzf "$CROSS_TAR" -C "$CACHE"
+dl "$MUSL_TOOLCHAIN_URL" "$CROSS_TAR"
+if [ ! -d "$CACHE/toolchain" ]; then
+	mkdir -p "$CACHE/toolchain"
+	tar -xJf "$CROSS_TAR" -C "$CACHE/toolchain" --strip-components=1
 fi
-export PATH="$CACHE/armv5l-linux-musleabi-cross/bin:$PATH"
-CROSS=armv5l-linux-musleabi-
+export PATH="$CACHE/toolchain/bin:$PATH"
+# Discover the compiler prefix (e.g. armv5-eabi-)
+GCC_BIN=$(basename "$(ls "$CACHE/toolchain/bin/"*-gcc | head -1)")
+CROSS=${GCC_BIN%gcc}
 ${CROSS}gcc --version | head -1
 
 BB_TAR=$CACHE/busybox-$BUSYBOX_VERSION.tar.bz2
-[ -f "$BB_TAR" ] || curl -fL -o "$BB_TAR" "$BUSYBOX_URL"
+dl "$BUSYBOX_URL" "$BB_TAR"
 DB_TAR=$CACHE/dropbear-$DROPBEAR_VERSION.tar.bz2
-[ -f "$DB_TAR" ] || curl -fL -o "$DB_TAR" "$DROPBEAR_URL"
+dl "$DROPBEAR_URL" "$DB_TAR"
 
 # ---- busybox (static) ----
 rm -rf "$BUILD/busybox-$BUSYBOX_VERSION"
@@ -56,7 +60,7 @@ cd "$ROOT"
 rm -rf "$BUILD/dropbear-$DROPBEAR_VERSION"
 tar -xjf "$DB_TAR" -C "$BUILD"
 cd "$BUILD/dropbear-$DROPBEAR_VERSION"
-./configure --host=armv5l-linux-musleabi --enable-static \
+./configure --host="${CROSS%-}" --enable-static \
 	--disable-zlib --disable-syslog >/dev/null
 make -s -j"$(nproc)" PROGRAMS="dropbear dropbearkey" >/dev/null
 cp dropbear dropbearkey "$ROOTFS/usr/sbin/" 2>/dev/null || \
