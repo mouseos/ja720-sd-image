@@ -10,6 +10,16 @@ The kernel itself lives in
 repository consumes its releases (`zImage`, `ja720.dtb`), builds a tiny
 static userland, and assembles the final distributable zip.
 
+## Raw full image (advanced)
+
+If you would rather write the internal SD directly (dd), use
+`tools/make-raw-image.py`: it splices JA720LNX.BIN into a copy of your
+own stock dump at the kernel offset (0x100000) and produces a raw image
+byte-identical to the dump outside the kernel area. See RAW-IMAGE.txt
+in the release zip. Note the payload (~8.9 MB) extends past the stock
+kernel slot and overwrites the head of the JA720XXX.DAT area; restoring
+BestaWin means writing the original dump back.
+
 ## What you get
 
 Each release contains `ja720-linux-<kernel-tag>.zip` with:
