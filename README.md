@@ -1,66 +1,55 @@
 # ja720-sd-image
 
-Builds the flashable SD update image for the **Benesse Pocket Challenge 4
-(JA720)** Linux port: kernel + initramfs in a single payload that the
-**stock loader's SDUPDATE mode** writes into the internal storage, plus
-the token file that drives it.
+Builds the Linux payload for the **Benesse Pocket Challenge 4 (JA720)**
+port and ships it as a raw image for the internal SD.
 
-The kernel itself lives in
+The kernel lives in
 [mouseos/linux-ja720](https://github.com/mouseos/linux-ja720); this
 repository consumes its releases (`zImage`, `ja720.dtb`), builds a tiny
-static userland, and assembles the final distributable zip.
+static userland (busybox + dropbear, ARMv5TE/musl), and assembles the
+payload.
 
-## Raw full image (advanced)
+## The release
 
-If you would rather write the internal SD directly (dd), use
-`tools/make-raw-image.py`: it splices JA720LNX.BIN into a copy of your
-own stock dump at the kernel offset (0x100000) and produces a raw image
-byte-identical to the dump outside the kernel area. See RAW-IMAGE.txt
-in the release zip. Note the payload (~8.9 MB) extends past the stock
-kernel slot and overwrites the head of the JA720XXX.DAT area; restoring
-BestaWin means writing the original dump back.
+`JA720-LINUX-RAW.img` (9,943,040 bytes) is the whole deliverable: the
+stock boot area (offsets 0–0x100000) followed by the payload at offset
+0x100000. Write it directly to the internal SD:
 
-## What you get
+```sh
+dd if=JA720-LINUX-RAW.img of=<internal SD> bs=4M status=progress
+```
 
-Each release contains `ja720-linux-<kernel-tag>.zip` with:
+Only 0x0–0x97B800 is written; everything past that on the card stays as
+it is. Note the payload extends past the stock kernel slot (0x430000)
+and overwrites the head of the JA720XXX.DAT area — BestaWin will not
+boot from this card afterwards; restore by writing a stock dump back.
 
-- `JA720LNX.BIN` — payload: Besta header + entry shim + zImage with
-  appended DTB + initramfs (busybox + dropbear, static, ARMv5TE/musl)
-- `SDUPDATE.INI` — token file for the stock loader's update mode
-- `README.txt` — end-user instructions (Japanese)
+## Payload layout
 
-The initramfs is the root filesystem: it brings up USB gadget Ethernet
-(`192.168.7.2/24`) and dropbear sshd. Default login: `root` / `ja720`
-(change it after first login). A shell is also available on the
-framebuffer console — the board has no exposed UART, so the display and
-SSH are the two debug channels.
+Loaded by the stock loader to `0x80000000`:
 
-## How the payload boots
+- `0x000` Besta kernel header (entry 0x80000020, load base 0x80000000,
+  size, `W55`/`FA93` markers)
+- `0x020` entry shim (`shim/shim.S`): CPU into ARM Linux boot protocol
+  state, branch to the zImage
+- `0x100` zImage, followed by the DTB in a fixed 32 KiB slot whose
+  `/chosen` points at the initramfs that follows it
+- total size padded to a 512-byte multiple
 
-The stock loader loads the payload to `0x80000000` and calls the entry
-at offset `0x20` with its own MMU/cache state. A small shim
-(`shim/shim.S`) switches the CPU to the ARM Linux boot protocol state
-and branches to the zImage at offset `0x100`. The DTB sits in a fixed
-32 KiB slot right after the zImage and points `/chosen` at the initrd
-that follows it.
-
-`SDUPDATE.INI` is a flat whitespace-separated token list — the exact
-format the loader firmware's parser consumes (name/address pairs for
-CODE, DAT0, DAT1, DAT2; address 0 = the kernel area at internal offset
-`0x100000`). Only CODE is used; unused slots are `NONE 0`.
+The initramfs is the root filesystem. The board has no USB port and no
+exposed UART, so the debug channels are the framebuffer console and
+the boot log the initramfs writes to `JA720LOG.TXT` on the SD card
+(dmesg, refreshed every 30 s). Login: `root` / `ja720`.
 
 ## Build
 
-CI (`.github/workflows/build.yml`) runs on push and on demand. The
-musl toolchain, source tarballs and the compiled rootfs are kept in
-`actions/cache` (keyed by `VERSIONS` + the build script), so repeat
-builds only redo what changed. To build the newest kernel release
-manually in CI, run the workflow with an optional `kernel_tag` input.
+CI (`.github/workflows/build.yml`) runs on push and on demand and
+uploads the payload as a build artifact. The musl toolchain, source
+tarballs and the compiled rootfs are kept in `actions/cache` (keyed by
+`VERSIONS` + the build scripts + the rootfs overlay), so repeat builds
+only redo what changed. Releases are cut manually; CI does not publish
+them.
 
-Local assembly from already-downloaded kernel assets works too (place
-`zImage` and `ja720.dtb` in `kernel/`):
-
-```sh
-sudo apt install gcc-arm-linux-gnueabi device-tree-compiler zip curl
-./build-image.sh
-```
+`tools/make-raw-image.py` documents how the raw image is assembled: it
+splices the payload into a stock dump at offset 0x100000 and verifies
+that everything outside the kernel area is untouched.
